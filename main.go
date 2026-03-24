@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -96,7 +98,9 @@ func (s *FirestoreStore) Load(ctx context.Context) (map[string]struct{}, error) 
 		if err != nil {
 			return nil, fmt.Errorf("firestore iterator: %w", err)
 		}
-		seen[doc.Ref.ID] = struct{}{}
+		if entryID, ok := doc.Data()["entryId"].(string); ok && entryID != "" {
+			seen[entryID] = struct{}{}
+		}
 	}
 
 	return seen, nil
@@ -108,9 +112,14 @@ func (s *FirestoreStore) Mark(ctx context.Context, ids []string) error {
 	}
 
 	batch := s.client.Batch()
-	for _, id := range ids {
-		doc := s.coll.Doc(id)
-		batch.Set(doc, map[string]any{"seenAt": firestore.ServerTimestamp}, firestore.MergeAll)
+-	for _, id := range ids {
+		hashed := sha256.Sum256([]byte(id))
+		docID := hex.EncodeToString(hashed[:])
+		doc := s.coll.Doc(docID)
+		batch.Set(doc, map[string]any{
+			"seenAt":  firestore.ServerTimestamp,
+			"entryId": id,
+		}, firestore.MergeAll)
 	}
 
 	_, err := batch.Commit(ctx)
