@@ -112,7 +112,7 @@ func (s *FirestoreStore) Mark(ctx context.Context, ids []string) error {
 	}
 
 	batch := s.client.Batch()
--	for _, id := range ids {
+	for _, id := range ids {
 		hashed := sha256.Sum256([]byte(id))
 		docID := hex.EncodeToString(hashed[:])
 		doc := s.coll.Doc(docID)
