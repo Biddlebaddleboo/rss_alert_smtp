@@ -48,6 +48,16 @@ type FirestoreStore struct {
 	coll   *firestore.CollectionRef
 }
 
+type Config struct {
+	FeedURL    string
+	ProjectID  string
+	DatabaseID string
+	SMTPHost   string
+	SMTPUser   string
+	SMTPPass   string
+	EmailTo    string
+}
+
 func newFirestoreStore(ctx context.Context, projectID, databaseID string) (*FirestoreStore, error) {
 	var client *firestore.Client
 	var err error
@@ -107,8 +117,13 @@ func (s *FirestoreStore) Mark(ctx context.Context, ids []string) error {
 	return err
 }
 
-func fetchFeed(url string) ([]AtomEntry, error) {
-	resp, err := http.Get(url)
+func fetchFeed(ctx context.Context, url string) ([]AtomEntry, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -128,50 +143,48 @@ func fetchFeed(url string) ([]AtomEntry, error) {
 	return feed.Entries, nil
 }
 
-func main() {
-	url := os.Getenv("FEED_URL")
-	if url == "" {
-		fmt.Println("FEED_URL environment variable is not set")
-		return
+func loadConfig() (Config, error) {
+	cfg := Config{
+		FeedURL:    os.Getenv("FEED_URL"),
+		ProjectID:  os.Getenv("GOOGLE_CLOUD_PROJECT"),
+		DatabaseID: os.Getenv("FIREBASE_DATABASE_ID"),
+		SMTPHost:   os.Getenv("SMTP_HOST"),
+		SMTPUser:   os.Getenv("SMTP_USER"),
+		SMTPPass:   os.Getenv("SMTP_PASS"),
+		EmailTo:    os.Getenv("EMAIL_TO"),
 	}
 
-	ctx := context.Background()
-	projectID := os.Getenv("GOOGLE_CLOUD_PROJECT")
-	if projectID == "" {
-		projectID = os.Getenv("GCP_PROJECT")
+	if cfg.ProjectID == "" {
+		cfg.ProjectID = os.Getenv("GCP_PROJECT")
 	}
-	if projectID == "" {
-		fmt.Println("GCP project ID environment variable is not set")
-		return
+	if cfg.DatabaseID == "" {
+		cfg.DatabaseID = firestore.DefaultDatabaseID
+	}
+	if cfg.EmailTo == "" {
+		cfg.EmailTo = "johnmega999@gmail.com"
 	}
 
-	databaseID := os.Getenv("FIREBASE_DATABASE_ID")
-	if databaseID == "" {
-		databaseID = firestore.DefaultDatabaseID
+	switch {
+	case cfg.FeedURL == "":
+		return Config{}, fmt.Errorf("FEED_URL environment variable is not set")
+	case cfg.ProjectID == "":
+		return Config{}, fmt.Errorf("GCP project ID environment variable is not set")
+	case cfg.SMTPHost == "" || cfg.SMTPUser == "" || cfg.SMTPPass == "":
+		return Config{}, fmt.Errorf("SMTP environment variables are not set")
+	default:
+		return cfg, nil
 	}
-	store, err := newFirestoreStore(ctx, projectID, databaseID)
+}
+
+func processFeed(ctx context.Context, store *FirestoreStore, cfg Config) (string, error) {
+	entries, err := fetchFeed(ctx, cfg.FeedURL)
 	if err != nil {
-		fmt.Printf("Error creating Firestore client: %v\n", err)
-		return
-	}
-	defer store.Close()
-
-	entries, err := fetchFeed(url)
-	if err != nil {
-		fmt.Printf("Error fetching feed: %v\n", err)
-		return
-	}
-
-	headers := []string{
-		"Subject: New RFD Gift Card Deals",
-		"MIME-Version: 1.0",
-		"Content-Type: text/html; charset=\"utf-8\"",
+		return "", fmt.Errorf("fetching feed: %w", err)
 	}
 
 	seenIDs, err := store.Load(ctx)
 	if err != nil {
-		fmt.Printf("Error loading seen IDs from Firestore: %v\n", err)
-		return
+		return "", fmt.Errorf("loading seen IDs from Firestore: %w", err)
 	}
 
 	var newEntries []AtomEntry
@@ -184,8 +197,13 @@ func main() {
 	}
 
 	if len(newEntries) == 0 {
-		fmt.Println("No new entries found.")
-		return
+		return "No new entries found.", nil
+	}
+
+	headers := []string{
+		"Subject: New RFD Gift Card Deals",
+		"MIME-Version: 1.0",
+		"Content-Type: text/html; charset=\"utf-8\"",
 	}
 
 	var bodyBuilder strings.Builder
@@ -198,21 +216,11 @@ func main() {
 	}
 	bodyBuilder.WriteString("</ul></body></html>")
 
-	htmlBody := bodyBuilder.String()
-	msg := strings.Join(headers, "\r\n") + "\r\n\r\n" + htmlBody
-	smtpHost := os.Getenv("SMTP_HOST")
-	smtpUser := os.Getenv("SMTP_USER")
-	smtpPass := os.Getenv("SMTP_PASS")
-	if smtpHost == "" || smtpUser == "" || smtpPass == "" {
-		fmt.Println("SMTP environment variables are not set")
-		return
-	}
-	auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
-	addr := smtpHost + ":587"
-	err = smtp.SendMail(addr, auth, smtpUser, []string{"johnmega999@gmail.com"}, []byte(msg))
-	if err != nil {
-		fmt.Printf("Error sending email: %v\n", err)
-		return
+	msg := strings.Join(headers, "\r\n") + "\r\n\r\n" + bodyBuilder.String()
+	auth := smtp.PlainAuth("", cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPHost)
+	addr := cfg.SMTPHost + ":587"
+	if err := smtp.SendMail(addr, auth, cfg.SMTPUser, []string{cfg.EmailTo}, []byte(msg)); err != nil {
+		return "", fmt.Errorf("sending email: %w", err)
 	}
 
 	ids := make([]string, len(newEntries))
@@ -220,6 +228,55 @@ func main() {
 		ids[i] = entry.ID
 	}
 	if err := store.Mark(ctx, ids); err != nil {
-		fmt.Printf("Error marking entries in Firestore: %v\n", err)
+		return "", fmt.Errorf("marking entries in Firestore: %w", err)
+	}
+
+	return fmt.Sprintf("Processed %d new entries.", len(newEntries)), nil
+}
+
+func main() {
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	ctx := context.Background()
+	store, err := newFirestoreStore(ctx, cfg.ProjectID, cfg.DatabaseID)
+	if err != nil {
+		fmt.Printf("Error creating Firestore client: %v\n", err)
+		return
+	}
+	defer store.Close()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		result, err := processFeed(r.Context(), store, cfg)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(result))
+	})
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	fmt.Printf("Listening on port %s\n", port)
+	if err := http.ListenAndServe(":"+port, mux); err != nil {
+		fmt.Printf("HTTP server failed: %v\n", err)
 	}
 }

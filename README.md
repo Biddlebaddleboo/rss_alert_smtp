@@ -3,10 +3,11 @@
 Fetches a phpBB Atom feed, deduplicates posts via Firestore, and sends a single HTML email containing every new entry.
 
 ## What it does
-1. Downloads a configured Atom feed URL.
-2. Tracks “seen” entry IDs inside Firestore’s `seen_entries` collection.
-3. Batches any brand-new posts into a single HTML message.
-4. Sends the message through the SMTP relay you configure.
+1. Starts an HTTP server for Cloud Run.
+2. Runs the feed check whenever the service receives a request on `/`.
+3. Tracks "seen" entry IDs inside Firestore's `seen_entries` collection.
+4. Batches any brand-new posts into a single HTML message.
+5. Sends the message through the SMTP relay you configure.
 
 ## Prerequisites
 - Go 1.26 or newer.
@@ -20,8 +21,9 @@ Fetches a phpBB Atom feed, deduplicates posts via Firestore, and sends a single 
 | `SMTP_HOST` | SMTP host (e.g., `smtp.zohocloud.ca`). |
 | `SMTP_USER` | SMTP username (typically the sender email). |
 | `SMTP_PASS` | SMTP password or app-specific secret. |
+| `EMAIL_TO` | Optional recipient email address. Defaults to `johnmega999@gmail.com`. |
 | `GOOGLE_CLOUD_PROJECT` / `GCP_PROJECT` | GCP project ID for Firestore initialization. |
-| `FIREBASE_DATABASE_ID` | (Optional) Firestore database ID; defaults to Firestore’s `(default)` database. |
+| `FIREBASE_DATABASE_ID` | (Optional) Firestore database ID; defaults to Firestore's `(default)` database. |
 
 ## Local development
 1. Install Go and make sure `C:\Program Files\Go\bin` is on your PATH.
@@ -37,6 +39,11 @@ Fetches a phpBB Atom feed, deduplicates posts via Firestore, and sends a single 
    ```
    go run main.go
    ```
+4. Trigger a run by visiting `http://localhost:8080/` or sending a request to `/`.
+
+## Endpoints
+- `/` triggers one feed-processing pass and returns a plain-text result like `Processed 3 new entries.` or `No new entries found.`
+- `/healthz` returns `ok` for health checks.
 
 ## Deploy to Cloud Run
 Cloud Run builds the Go binary and downloads Firestore dependencies automatically:
@@ -48,7 +55,7 @@ gcloud run deploy rss-alert \
   --set-env-vars FEED_URL=<feed>,SMTP_HOST=<host>,SMTP_USER=<user>,SMTP_PASS=<pass>,GOOGLE_CLOUD_PROJECT=<project>
 ```
 - Make sure the Cloud Run service account has the Firestore role it needs (Firestore User or Firestore Client).
-- If you need scheduling, trigger the service via Cloud Scheduler or add an internal ticker loop.
+- Trigger the service with Cloud Scheduler or any HTTP client that can call `/`.
 
 ## Continuous deploy with Cloud Build
 Use the provided `cloudbuild.yaml` to build, push, and deploy on every commit:
