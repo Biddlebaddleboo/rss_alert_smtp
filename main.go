@@ -185,6 +185,20 @@ func loadConfig() (Config, error) {
 	}
 }
 
+func sendEmail(cfg Config, subject, htmlBody string) error {
+	headers := []string{
+		"Subject: " + subject,
+		"MIME-Version: 1.0",
+		"Content-Type: text/html; charset=\"utf-8\"",
+	}
+
+	msg := strings.Join(headers, "\r\n") + "\r\n\r\n" + htmlBody
+	auth := smtp.PlainAuth("", cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPHost)
+	addr := cfg.SMTPHost + ":587"
+
+	return smtp.SendMail(addr, auth, cfg.SMTPUser, []string{cfg.EmailTo}, []byte(msg))
+}
+
 func processFeed(ctx context.Context, store *FirestoreStore, cfg Config) (string, error) {
 	entries, err := fetchFeed(ctx, cfg.FeedURL)
 	if err != nil {
@@ -209,12 +223,6 @@ func processFeed(ctx context.Context, store *FirestoreStore, cfg Config) (string
 		return "No new entries found.", nil
 	}
 
-	headers := []string{
-		"Subject: New RFD Gift Card Deals",
-		"MIME-Version: 1.0",
-		"Content-Type: text/html; charset=\"utf-8\"",
-	}
-
 	var bodyBuilder strings.Builder
 	bodyBuilder.WriteString("<html><body><h1>New Feed Items</h1><ul>")
 	for _, entry := range newEntries {
@@ -225,10 +233,7 @@ func processFeed(ctx context.Context, store *FirestoreStore, cfg Config) (string
 	}
 	bodyBuilder.WriteString("</ul></body></html>")
 
-	msg := strings.Join(headers, "\r\n") + "\r\n\r\n" + bodyBuilder.String()
-	auth := smtp.PlainAuth("", cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPHost)
-	addr := cfg.SMTPHost + ":587"
-	if err := smtp.SendMail(addr, auth, cfg.SMTPUser, []string{cfg.EmailTo}, []byte(msg)); err != nil {
+	if err := sendEmail(cfg, "New RFD Gift Card Deals", bodyBuilder.String()); err != nil {
 		return "", fmt.Errorf("sending email: %w", err)
 	}
 
