@@ -153,8 +153,11 @@ func fetchFeed(ctx context.Context, url string) ([]AtomEntry, error) {
 }
 
 func parseEmailRecipients(value string) []string {
-	var recipients []string
-	for _, recipient := range strings.Split(value, ",") {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ';'
+	})
+	recipients := make([]string, 0, len(parts))
+	for _, recipient := range parts {
 		if recipient = strings.TrimSpace(recipient); recipient != "" {
 			recipients = append(recipients, recipient)
 		}
