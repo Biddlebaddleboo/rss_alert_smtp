@@ -21,7 +21,7 @@ Fetches a phpBB Atom feed, deduplicates posts via Firestore, and sends a single 
 | `SMTP_HOST` | SMTP host (e.g., `smtp.zohocloud.ca`). |
 | `SMTP_USER` | SMTP username (typically the sender email). |
 | `SMTP_PASS` | SMTP password or app-specific secret. |
-| `EMAIL_TO` | Optional recipient email address or comma/semicolon-separated list. Defaults to `johnmega999@gmail.com`. Use semicolons when passing multiple recipients through `cloudbuild.yaml`. |
+| `EMAIL_TO` | Required recipient email address or comma/semicolon-separated list. At least one recipient must be configured. Use semicolons when passing multiple recipients through `cloudbuild.yaml`. |
 | `GOOGLE_CLOUD_PROJECT` / `GCP_PROJECT` | GCP project ID for Firestore initialization. |
 | `FIREBASE_DATABASE_ID` | (Optional) Firestore database ID; defaults to Firestore's `(default)` database. |
 
@@ -53,10 +53,10 @@ gcloud run deploy rss-alert \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars FEED_URL=<feed>,SMTP_HOST=<host>,SMTP_USER=<user>,SMTP_PASS=<pass>,GOOGLE_CLOUD_PROJECT=<project>
+  --set-env-vars FEED_URL=<feed>,SMTP_HOST=<host>,SMTP_USER=<user>,SMTP_PASS=<pass>,EMAIL_TO=<recipient-or-list>,GOOGLE_CLOUD_PROJECT=<project>
 ```
 - Make sure the Cloud Run service account has the Firestore role it needs (Firestore User or Firestore Client).
-- Set `EMAIL_TO` on the Cloud Run service to one address or a comma/semicolon-separated list.
+- `EMAIL_TO` is required and may contain one address or a comma/semicolon-separated list.
 - Trigger the service with Cloud Scheduler or any HTTP client that can call `/`.
 
 ## Continuous deploy with Cloud Build
@@ -76,5 +76,5 @@ Create a Cloud Build trigger that overrides those substitutions with your produc
 - Fields: `seenAt` (server timestamp) and `entryId` (original Atom entry ID).
 
 ## Testing
-- Run `go test ./...` to verify recipient parsing and the rest of the package.
+- Run `go test ./...` to verify recipient parsing and configuration validation.
 - Point the code at a test Firestore dataset or local emulator and run `go run main.go` with the same env vars to verify the fetch/send loop.
