@@ -57,7 +57,7 @@ type Config struct {
 	SMTPHost   string
 	SMTPUser   string
 	SMTPPass   string
-	EmailTo    string
+	EmailTo    []string
 }
 
 func newFirestoreStore(ctx context.Context, projectID, databaseID string) (*FirestoreStore, error) {
@@ -152,7 +152,22 @@ func fetchFeed(ctx context.Context, url string) ([]AtomEntry, error) {
 	return feed.Entries, nil
 }
 
+func parseEmailRecipients(value string) []string {
+	var recipients []string
+	for _, recipient := range strings.Split(value, ",") {
+		if recipient = strings.TrimSpace(recipient); recipient != "" {
+			recipients = append(recipients, recipient)
+		}
+	}
+	return recipients
+}
+
 func loadConfig() (Config, error) {
+	emailTo := os.Getenv("EMAIL_TO")
+	if emailTo == "" {
+		emailTo = "johnmega999@gmail.com"
+	}
+
 	cfg := Config{
 		FeedURL:    os.Getenv("FEED_URL"),
 		ProjectID:  os.Getenv("GOOGLE_CLOUD_PROJECT"),
@@ -160,7 +175,7 @@ func loadConfig() (Config, error) {
 		SMTPHost:   os.Getenv("SMTP_HOST"),
 		SMTPUser:   os.Getenv("SMTP_USER"),
 		SMTPPass:   os.Getenv("SMTP_PASS"),
-		EmailTo:    os.Getenv("EMAIL_TO"),
+		EmailTo:    parseEmailRecipients(emailTo),
 	}
 
 	if cfg.ProjectID == "" {
@@ -168,9 +183,6 @@ func loadConfig() (Config, error) {
 	}
 	if cfg.DatabaseID == "" {
 		cfg.DatabaseID = firestore.DefaultDatabaseID
-	}
-	if cfg.EmailTo == "" {
-		cfg.EmailTo = "johnmega999@gmail.com"
 	}
 
 	switch {
@@ -180,6 +192,8 @@ func loadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("GCP project ID environment variable is not set")
 	case cfg.SMTPHost == "" || cfg.SMTPUser == "" || cfg.SMTPPass == "":
 		return Config{}, fmt.Errorf("SMTP environment variables are not set")
+	case len(cfg.EmailTo) == 0:
+		return Config{}, fmt.Errorf("EMAIL_TO does not contain a valid recipient")
 	default:
 		return cfg, nil
 	}
@@ -196,7 +210,7 @@ func sendEmail(cfg Config, subject, htmlBody string) error {
 	auth := smtp.PlainAuth("", cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPHost)
 	addr := cfg.SMTPHost + ":587"
 
-	return smtp.SendMail(addr, auth, cfg.SMTPUser, []string{cfg.EmailTo}, []byte(msg))
+	return smtp.SendMail(addr, auth, cfg.SMTPUser, cfg.EmailTo, []byte(msg))
 }
 
 func processFeed(ctx context.Context, store *FirestoreStore, cfg Config) (string, error) {
