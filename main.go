@@ -166,11 +166,6 @@ func parseEmailRecipients(value string) []string {
 }
 
 func loadConfig() (Config, error) {
-	emailTo := os.Getenv("EMAIL_TO")
-	if emailTo == "" {
-		emailTo = "johnmega999@gmail.com"
-	}
-
 	cfg := Config{
 		FeedURL:    os.Getenv("FEED_URL"),
 		ProjectID:  os.Getenv("GOOGLE_CLOUD_PROJECT"),
@@ -178,7 +173,7 @@ func loadConfig() (Config, error) {
 		SMTPHost:   os.Getenv("SMTP_HOST"),
 		SMTPUser:   os.Getenv("SMTP_USER"),
 		SMTPPass:   os.Getenv("SMTP_PASS"),
-		EmailTo:    parseEmailRecipients(emailTo),
+		EmailTo:    parseEmailRecipients(os.Getenv("EMAIL_TO")),
 	}
 
 	if cfg.ProjectID == "" {
@@ -196,7 +191,7 @@ func loadConfig() (Config, error) {
 	case cfg.SMTPHost == "" || cfg.SMTPUser == "" || cfg.SMTPPass == "":
 		return Config{}, fmt.Errorf("SMTP environment variables are not set")
 	case len(cfg.EmailTo) == 0:
-		return Config{}, fmt.Errorf("EMAIL_TO does not contain a valid recipient")
+		return Config{}, fmt.Errorf("EMAIL_TO must contain at least one recipient")
 	default:
 		return cfg, nil
 	}
