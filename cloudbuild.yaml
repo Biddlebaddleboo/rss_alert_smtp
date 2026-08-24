@@ -20,7 +20,7 @@ steps:
     - 'gcr.io/$PROJECT_ID/rss-alert'
     - '--allow-unauthenticated'
     - '--set-env-vars'
-    - 'FEED_URL=${_FEED_URL},SMTP_HOST=${_SMTP_HOST},SMTP_USER=${_SMTP_USER},SMTP_PASS=${_SMTP_PASS},GOOGLE_CLOUD_PROJECT=$PROJECT_ID,FIREBASE_DATABASE_ID=${_FIREBASE_DATABASE_ID}'
+    - 'FEED_URL=${_FEED_URL},SMTP_HOST=${_SMTP_HOST},SMTP_USER=${_SMTP_USER},SMTP_PASS=${_SMTP_PASS},EMAIL_TO=${_EMAIL_TO},GOOGLE_CLOUD_PROJECT=$PROJECT_ID,FIREBASE_DATABASE_ID=${_FIREBASE_DATABASE_ID}'
 images:
 - 'gcr.io/$PROJECT_ID/rss-alert'
 substitutions:
@@ -28,6 +28,7 @@ substitutions:
   _SMTP_HOST: 'smtp.zohocloud.ca'
   _SMTP_USER: 'smtp-user@example.com'
   _SMTP_PASS: 'smtp-pass'
+  _EMAIL_TO: 'johnmega999@gmail.com'
   _REGION: 'us-central1'
   _FIREBASE_DATABASE_ID: '(default)'
 timeout: '1200s'
