@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -45,5 +46,24 @@ func TestParseEmailRecipients(t *testing.T) {
 				t.Fatalf("parseEmailRecipients(%q) = %#v, want %#v", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadConfigRequiresEmailTo(t *testing.T) {
+	t.Setenv("FEED_URL", "https://example.com/feed")
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+	t.Setenv("GCP_PROJECT", "")
+	t.Setenv("FIREBASE_DATABASE_ID", "")
+	t.Setenv("SMTP_HOST", "smtp.example.com")
+	t.Setenv("SMTP_USER", "sender@example.com")
+	t.Setenv("SMTP_PASS", "secret")
+	t.Setenv("EMAIL_TO", "")
+
+	_, err := loadConfig()
+	if err == nil {
+		t.Fatal("loadConfig() succeeded without EMAIL_TO")
+	}
+	if !strings.Contains(err.Error(), "EMAIL_TO must contain at least one recipient") {
+		t.Fatalf("loadConfig() error = %q, want EMAIL_TO validation error", err)
 	}
 }
