@@ -7,7 +7,7 @@ Fetches a phpBB Atom feed, deduplicates posts via Firestore, and sends a single 
 2. Runs the feed check whenever the service receives a request on `/`.
 3. Tracks "seen" entry IDs inside Firestore's `seen_entries` collection.
 4. Batches any brand-new posts into a single HTML message.
-5. Sends the message through the SMTP relay you configure.
+5. Sends the message through the SMTP relay you configure to one or more recipients.
 
 ## Prerequisites
 - Go 1.26 or newer.
@@ -21,7 +21,7 @@ Fetches a phpBB Atom feed, deduplicates posts via Firestore, and sends a single 
 | `SMTP_HOST` | SMTP host (e.g., `smtp.zohocloud.ca`). |
 | `SMTP_USER` | SMTP username (typically the sender email). |
 | `SMTP_PASS` | SMTP password or app-specific secret. |
-| `EMAIL_TO` | Optional recipient email address. Defaults to `johnmega999@gmail.com`. |
+| `EMAIL_TO` | Optional recipient email address or comma/semicolon-separated list. Defaults to `johnmega999@gmail.com`. Use semicolons when passing multiple recipients through `cloudbuild.yaml`. |
 | `GOOGLE_CLOUD_PROJECT` / `GCP_PROJECT` | GCP project ID for Firestore initialization. |
 | `FIREBASE_DATABASE_ID` | (Optional) Firestore database ID; defaults to Firestore's `(default)` database. |
 
@@ -33,6 +33,7 @@ Fetches a phpBB Atom feed, deduplicates posts via Firestore, and sends a single 
    $env:SMTP_HOST="smtp.zohocloud.ca"
    $env:SMTP_USER="you@example.com"
    $env:SMTP_PASS="secret"
+   $env:EMAIL_TO="first@example.com;second@example.com"
    $env:GOOGLE_CLOUD_PROJECT="your-project-id"
    ```
 3. Run the service:
@@ -55,6 +56,7 @@ gcloud run deploy rss-alert \
   --set-env-vars FEED_URL=<feed>,SMTP_HOST=<host>,SMTP_USER=<user>,SMTP_PASS=<pass>,GOOGLE_CLOUD_PROJECT=<project>
 ```
 - Make sure the Cloud Run service account has the Firestore role it needs (Firestore User or Firestore Client).
+- Set `EMAIL_TO` on the Cloud Run service to one address or a comma/semicolon-separated list.
 - Trigger the service with Cloud Scheduler or any HTTP client that can call `/`.
 
 ## Continuous deploy with Cloud Build
@@ -62,15 +64,17 @@ Use the provided `cloudbuild.yaml` to build, push, and deploy on every commit:
 
 1. `go test ./...` to verify the code.
 2. Build/push `gcr.io/$PROJECT_ID/rss-alert` using the `Dockerfile` in this repo.
-3. Run `gcloud run deploy` with environment-variable substitutions for `_FEED_URL`, `_SMTP_HOST`, `_SMTP_USER`, `_SMTP_PASS`, `_REGION`, and `_FIREBASE_DATABASE_ID`.
-4. Provide `_FIREBASE_DATABASE_ID` only if you need to use a non-default Firestore database.
+3. Run `gcloud run deploy` with environment-variable substitutions for `_FEED_URL`, `_SMTP_HOST`, `_SMTP_USER`, `_SMTP_PASS`, `_EMAIL_TO`, `_REGION`, and `_FIREBASE_DATABASE_ID`.
+4. For multiple `_EMAIL_TO` recipients, use semicolons, for example `first@example.com;second@example.com`, because the deploy command uses commas to separate environment variable assignments.
+5. Provide `_FIREBASE_DATABASE_ID` only if you need to use a non-default Firestore database.
 
 Create a Cloud Build trigger that overrides those substitutions with your production values. For secrets (SMTP password) use Cloud Build Secrets or Secret Manager so credentials never land in source control.
 
 ## Firestore layout
 - Collection: `seen_entries`
-- Document ID: Atom entry `ID` (unique per post).
-- Fields: `seenAt` (server timestamp added when the entry is marked).
+- Document ID: SHA-256 hash of the Atom entry ID.
+- Fields: `seenAt` (server timestamp) and `entryId` (original Atom entry ID).
 
 ## Testing
+- Run `go test ./...` to verify recipient parsing and the rest of the package.
 - Point the code at a test Firestore dataset or local emulator and run `go run main.go` with the same env vars to verify the fetch/send loop.
